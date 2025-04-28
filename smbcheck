@@ -1,0 +1,125 @@
+#!/bin/bash
+
+if [ -z "${ip}" ] && [ -z "${domain}" ]; then
+  echo "Usage: export ip=<Target IP> && export domain=<Domain>"
+  exit 1
+fi
+
+echo "Environment variables are set: IP=$ip <<>> DOMAIN=$domain"
+echo ''
+
+echo '>>>>>>>>>>>>>>>>>>>>>>>>> enum4linux* <<<<<<<<<<<<<<<<<<<<<<<<<'
+enum4linux -a "$ip"
+enum4linux-ng "$ip"
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+echo ">>>>>>>>>>>>> Session check with enum4linux* <<<<<<<<<<<<<<<<<<"
+enum4linux -a -u "" -p "" "$ip"
+enum4linux -a -u "guest" -p "" "$ip"
+enum4linux -a -u "randUser" -p "" "$ip"
+enum4linux-ng "$ip" -R 2000 -G -u "" -p ""
+enum4linux-ng "$ip" -R 2000 -G -u "RandUser" -p ""
+enum4linux-ng "$ip" -R 2000 -G -u "guest" -p ""
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo ">>>>>>>>>>>>>>>>>>>>>> netexec anonymous <<<<<<<<<<<<<<<<<<<<<<"
+netexec smb "$ip" -u anonymous -p ""              #using random user
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo ">>>>>>>>>>>>>>>>>>>>> Impacket-lookupsid <<<<<<<<<<<<<<<<<<<<<<"
+impacket-lookupsid anonymous@"$ip" -no-pass             #enum usernames
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+	
+echo '>>>>>>>>>>>>>>>>>>>>>>> Guest login check <<<<<<<<<<<<<<<<<<<<<'
+netexec smb "$ip" -u guest -p ""
+smbclient -U 'guest%' -L //"$ip"
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+	
+echo '>>>>>>>>>>>>>> Null/anonymous User login check <<<<<<<<<<<<<<<<'
+netexec smb "$ip" -u "" -p ""
+smbclient -U '%' -L //"$ip"             # Enumerate SMB Shares with blank user pass
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+echo '>>>>>>>>>>>>> Enum users, groups & logged on users <<<<<<<<<<<<'
+netexec smb "$ip" -u guest -p "" --users
+nxc smb "$ip" -u anonymous -p "" --groups
+nxc smb "$ip" --loggedon-users -u "" -p "" --groups
+nxc smb "$ip" --shares -u '' -p ''
+nxc smb "$ip" -u guest -p "" --rid-brute
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo '>>>>>>>>>>>>>>>>>>>>>>> Spidering shares <<<<<<<<<<<<<<<<<<<<<<'
+nxc smb "$ip" -u '' -p '' -M spider_plus
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>> ridenum <<<<<<<<<<<<<<<<<<<<<<<<<<<'
+ridenum "$ip" 500 50000
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+dom=$(echo $domain | awk -F. '{print "DC="$1",DC="$2}')
+echo '>>>>>>>>>>>>>>>>>>>> LDAPsearch user enum <<<<<<<<<<<<<<<<<<<<<'
+ldapsearch -x -b "$dom" -s sub "(&(objectclass=user))" -H  ldap://"$ip" | grep -i samaccountname: | cut -f 2 -d " "
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+echo '>>>>>>>>>>>>>>>>>>>>>>>>> SMB client <<<<<<<<<<<<<<<<<<<<<<<<<<'
+rpcclient -U "" -N "$ip" -c 'enumdomusers,enumdomgroups'
+rpcclient -U "" -P "" "$ip" -c 'enumdomusers,enumdomgroups'
+rpcclient --user '%' "$ip" -c 'enumdomusers,enumdomgroups'
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo '>>>>>>>>>>>>>>>>>>>>>>>>> List shares <<<<<<<<<<<<<<<<<<<<<<<<<'
+smbclient -L "$ip" -N                           #list out shares without creds
+smbclient -U 'admin%' -L //"$ip"/C$ -N          # Auth session check
+smbclient -L \\\\"$ip"\\ -m SMB2 -N             # Check SMB2 Signing
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo '>>>>>>>>>>>>>>> smbclient null session check <<<<<<<<<<<<<<<<<<'
+smbclient -N -L //"$ip"            #Null user
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>> Smbmap <<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+smbmap -H "$ip"
+smbmap -R -u "" -p "" -H "$ip"               #Recursive list
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+echo '>>>>>>>>>>>>>>>>>>> List share Recursively <<<<<<<<<<<<<<<<<<<<'
+#Smbclient -L //"$ip" -N -c 'recurse;ls'                #list recursively
+#Smbmap -H "$ip" -R Folder                              #list recursively
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+
+echo '>>>>>>>>>>>>>>>>>>>>> user enum with impacket <<<<<<<<<<<<<<<<<'
+impacket-lookupsid -no-pass "$domain"
+impacket-lookupsid -no-pass "guest@$domain" 10000 | grep 'SidTypeUser' | grep -v -e "$(echo $domain | awk -F. '{print $1}')" | awk -F'\\' '{print $2}' | sed 's/ (SidTypeUser)//'
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
+
+
+#for i in $(seq 500 1100);do rpcclient -N -U "" "$ip" -c "queryuser 0x$(printf '%x\n' $i)" | grep "User Name\|user_rid\|group_rid" && echo "";done
+
+
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>> samrdump.py <<<<<<<<<<<<<<<<<<<<<<<<'
+samrdump.py "$ip"
+echo '>>>>>>>>>>>>>>>>>>>>>>>>>>>> END <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'
+echo ''
