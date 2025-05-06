@@ -1,1 +1,1 @@
-# Collection of scripts to make life easy
+# Collection of scripts to make things easy
